@@ -1,0 +1,41 @@
+# ViFND-Feature-Fusion Configuration & Guardrails
+
+system:
+  project_name: "ViFND-Feature-Fusion"
+  description: "Vietnamese Fake News Detection via Dual-Stream Feature Fusion & XAI"
+  python_version: "3.11"
+  conda_env: "ML_Practice01"
+
+hardware_guardrails:
+  max_ram_gb: 16.0
+  max_vram_gb: 15.0 # Free Colab T4 ceiling
+  timeout_per_run_minutes: 30
+
+data_pipeline:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  fixtures_dir: "data/fixtures"
+  minhash_lsh:
+    num_perm: 128
+    threshold: 0.85
+    bands: 32
+    rows: 4
+  min_word_length: 30
+
+feature_pipeline:
+  stylometric_dim: 15
+  phobert_model_name: "vinai/phobert-base-v2"
+  phobert_dim: 768
+  max_sequence_length: 256
+  head_tokens: 128
+  tail_tokens: 128
+
+modeling:
+  cv_folds: 5
+  random_state: 42
+  metrics: ["macro_f1", "pr_auc", "roc_auc", "precision", "recall"]
+
+ui_service:
+  host: "0.0.0.0"
+  port: 7860
+  max_response_time_sec: 1.5

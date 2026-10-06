@@ -1,0 +1,41 @@
+{
+  "status": "success",
+  "url": "https://tin-tuc-mang-xa-hoi.vn/post/10293",
+  "title": "CHẤN ĐỘNG: Phát hiện bài thuốc chữa khỏi 100% ung thư trong 7 ngày!!!",
+  "prediction": "TIN GIẢ / GIẬT GÂN",
+  "probability_fake": 0.9412,
+  "confidence_score": 94.1,
+  "risk_tier": "CRITICAL",
+  "stylometric_summary": {
+    "exclamation_density": 0.045,
+    "clickbait_keyword_hits": 4,
+    "upper_ratio": 0.182,
+    "title_body_ratio": 0.15
+  },
+  "top_shap_factors": [
+    {
+      "feature": "exclamation_density",
+      "contribution": 0.482,
+      "direction": "INCREASES_FAKE_RISK",
+      "description_vi": "Mật độ dấu chấm than (!) cao bất thường (3 dấu chấm than liên tiếp)."
+    },
+    {
+      "feature": "clickbait_keyword_hits",
+      "contribution": 0.351,
+      "direction": "INCREASES_FAKE_RISK",
+      "description_vi": "Chứa các từ khóa giật gân, kích động cảm xúc ('CHẤN ĐỘNG', '100%')."
+    },
+    {
+      "feature": "upper_ratio",
+      "contribution": 0.124,
+      "direction": "INCREASES_FAKE_RISK",
+      "description_vi": "Tỷ lệ ký tự viết hoa trong tiêu đề cao bất thường."
+    },
+    {
+      "feature": "phobert_semantics",
+      "contribution": -0.016,
+      "direction": "SLIGHTLY_DECREASES_RISK",
+      "description_vi": "Không gian ngữ nghĩa bài viết có cấu trúc tương đối liền mạch."
+    }
+  ]
+}

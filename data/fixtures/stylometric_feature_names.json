@@ -1,0 +1,17 @@
+[
+  "upper_ratio",
+  "exclamation_density",
+  "question_density",
+  "punct_density",
+  "title_body_ratio",
+  "clickbait_keyword_hits",
+  "digit_in_title",
+  "colon_dash_density",
+  "quote_density",
+  "avg_sentence_len",
+  "urgency_density",
+  "pronoun_density",
+  "teencode_ratio",
+  "title_body_jaccard",
+  "sentiment_extremity"
+]
