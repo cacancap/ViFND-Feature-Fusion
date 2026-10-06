@@ -42,16 +42,33 @@ conda activate ML_Practice01
 pip install -r requirements.txt
 ```
 
-### Kiểm tra tự động các hợp đồng dữ liệu
+### Khởi động Giao diện Web Gradio (TV5)
+```bash
+python app.py
+```
+Truy cập tại: `http://localhost:7860` để trải nghiệm dán link bài báo, phân loại tin tức và xem biểu đồ SHAP Waterfall.
+
+### Khởi động Dịch vụ REST API FastAPI (TV5)
+```bash
+uvicorn src.api.server:app --host 127.0.0.1 --port 8000 --reload
+```
+Truy cập Swagger UI tại: `http://localhost:8000/docs`
+
+### Chạy Bộ Kiểm thử Toàn diện (Contract & Component Tests)
 Bất kỳ thành viên nào trước khi commit code hoặc bàn giao dữ liệu chỉ cần chạy:
 ```bash
-pytest tests/test_data_contracts.py
+pytest tests/ -v
 ```
-Nếu màn hình báo `4 passed` là toàn bộ cấu trúc dữ liệu đã chuẩn xác và sẵn sàng tích hợp!
+Nếu màn hình báo `9 passed` (100%) là toàn bộ module và cấu trúc dữ liệu đã chuẩn xác và sẵn sàng tích hợp!
 
 ### Tái tạo lại dữ liệu mẫu (Mock Fixtures)
 ```bash
 python src/utils/mock_data_generator.py
+```
+
+### Triển khai với Docker & Docker Compose
+```bash
+docker-compose up --build
 ```
 
 ---

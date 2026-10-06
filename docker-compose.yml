@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  vifnd-app:
+    build: .
+    container_name: vifnd-gradio-ui
+    ports:
+      - "7860:7860"
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./outputs:/app/outputs
+      - ./data:/app/data
+    restart: unless-stopped
+
+  vifnd-api:
+    build: .
+    container_name: vifnd-fastapi-service
+    command: ["uvicorn", "src.api.server:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./outputs:/app/outputs
+      - ./data:/app/data
+    restart: unless-stopped
