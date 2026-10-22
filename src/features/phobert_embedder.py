@@ -102,15 +102,20 @@ class PhoBertEmbedder:
 
     def _generate_mock_embedding(self, text: str) -> np.ndarray:
         """
-        Sinh vector 768 chiều giả lập có tính tất định (deterministic) dựa trên SHA256 của văn bản.
+        Sinh vector 768 chiều giả lập có tính tất định (deterministic) dựa trên Feature Hashing của văn bản.
         Thỏa mãn 100% chuẩn L2: ||v|| = 1.0.
+        Giữ được tương quan ngữ nghĩa từ vựng giữa các văn bản cùng chủ đề.
         """
-        h = hashlib.sha256(text.encode("utf-8")).digest()
-        seed = int.from_bytes(h[:4], "little")
-        rng = np.random.RandomState(seed)
-        vec = rng.randn(768).astype(np.float32)
-        norm = np.linalg.norm(vec) + 1e-8
-        vec = vec / norm
+        from sklearn.feature_extraction.text import HashingVectorizer
+        if not hasattr(self, "_mock_hasher") or self._mock_hasher is None:
+            self._mock_hasher = HashingVectorizer(n_features=768, norm='l2', alternate_sign=True)
+        raw_text = text if text and isinstance(text, str) else "tin_tức"
+        vec = self._mock_hasher.transform([raw_text]).toarray()[0].astype(np.float32)
+        norm = float(np.linalg.norm(vec))
+        if norm > 1e-8:
+            vec = vec / norm
+        else:
+            vec[0] = 1.0
         return vec
 
     def encode_single_article(self, title: str, content: str) -> np.ndarray:

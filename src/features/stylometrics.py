@@ -138,9 +138,9 @@ class StylometricExtractor:
         upper_count = sum(1 for c in full_text if c.isupper())
         feat_1 = upper_count / num_chars_full
 
-        # 2. exclamation_density: Mật độ dấu chấm than trên tổng số từ
+        # 2. exclamation_density: Mật độ dấu chấm than trên tổng số từ (giới hạn chặn trên tránh ngoại lai cực đoan)
         excl_count = full_text.count('!')
-        feat_2 = excl_count / (n_words_full + 1)
+        feat_2 = min(excl_count / (n_words_full + 1), 0.15)
 
         # 3. question_density: Mật độ dấu chấm hỏi trên tổng số từ
         ques_count = full_text.count('?')
@@ -236,6 +236,34 @@ class StylometricExtractor:
         if not self.is_fitted:
             return X.astype(np.float32)
         return self.scaler.transform(X).astype(np.float32)
+
+    def save_scaler(self, filepath: Union[str, Path]):
+        """Lưu trọng số StandardScaler ra file JSON."""
+        if not self.is_fitted:
+            return
+        payload = {
+            "mean": self.scaler.mean_.tolist(),
+            "scale": self.scaler.scale_.tolist(),
+            "var": self.scaler.var_.tolist()
+        }
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+
+    def load_scaler(self, filepath: Union[str, Path]) -> bool:
+        """Tải trọng số StandardScaler từ file JSON."""
+        p = Path(filepath)
+        if not p.exists():
+            return False
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            self.scaler.mean_ = np.array(payload["mean"], dtype=np.float32)
+            self.scaler.scale_ = np.array(payload["scale"], dtype=np.float32)
+            self.scaler.var_ = np.array(payload["var"], dtype=np.float32)
+            self.is_fitted = True
+            return True
+        except Exception:
+            return False
 
     @classmethod
     def get_feature_names(cls) -> List[str]:

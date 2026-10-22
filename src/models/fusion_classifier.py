@@ -108,6 +108,11 @@ class FakeNewsPredictor:
             project_root / "outputs" / "checkpoints" / "best_fusion_xgboost.model"
         ])
 
+        scaler_path = project_root / "outputs" / "checkpoints" / "fusion_scaler.json"
+        if scaler_path.exists():
+            if self.stylometric_extractor.load_scaler(scaler_path):
+                print(f"[FakeNewsPredictor] Đã nạp scaler chuẩn hóa từ {scaler_path}")
+
         for p in candidate_paths:
             if p.exists():
                 try:
@@ -134,18 +139,22 @@ class FakeNewsPredictor:
         content = content.strip() if isinstance(content, str) else ""
 
         # 1. Trích xuất đặc trưng hình thức 15D
-        sty_vec = self.stylometric_extractor.extract_single(title, content)
+        sty_vec_raw = self.stylometric_extractor.extract_single(title, content)
+        if self.stylometric_extractor.is_fitted:
+            sty_vec_scaled = self.stylometric_extractor.transform(sty_vec_raw.reshape(1, -1))[0]
+        else:
+            sty_vec_scaled = sty_vec_raw
         
         # 2. Trích xuất đặc trưng ngữ nghĩa 768D
         sem_vec = self.phobert_embedder.encode_single_article(title, content)
 
         # 3. Trích xuất đặc trưng kiểm chứng chéo 4D và danh sách bài báo đối chứng
         veri_vec, evidence_articles = self.cross_verifier.verify_article(
-            title, content, url, stylometric_vector=sty_vec
+            title, content, url, stylometric_vector=sty_vec_raw
         )
 
         # 4. Ghép nối thành vector toàn diện 787D (768 + 15 + 4)
-        fused_vec = np.hstack([sem_vec, sty_vec, veri_vec]).astype(np.float32).reshape(1, -1)
+        fused_vec = np.hstack([sem_vec, sty_vec_scaled, veri_vec]).astype(np.float32).reshape(1, -1)
 
         # 5. Dự đoán & Tính giá trị SHAP
         if (
@@ -154,28 +163,40 @@ class FakeNewsPredictor:
             and getattr(self.model, "n_features_in_", 0) == 787
         ):
             # Mô hình đã huấn luyện đúng kích thước 787D
-            prob_fake = float(self.model.predict_proba(fused_vec)[0, 1])
+            prob_model = float(self.model.predict_proba(fused_vec)[0, 1])
             shap_values = self.explainer.shap_values(fused_vec)[0] # shape (787,)
             
             sem_shap_total = float(np.sum(shap_values[:768]))
             sty_shap = shap_values[768:783]
             veri_shap = shap_values[783:]
+
+            # Hiệu chuẩn xác suất kết hợp (Calibrated Prob):
+            veri_penalty = veri_vec[3]
+            veri_source_count = veri_vec[1]
+            veri_max_sim = veri_vec[0]
+            
+            prob_fake = prob_model
+            # Bảo vệ hiệu chuẩn: nếu bài viết hoàn toàn không có đối chứng chính thống và mang tính bất thường cao
+            if veri_penalty >= 0.50 and veri_source_count == 0 and veri_max_sim < 0.25:
+                prob_fake = max(prob_fake, 0.65)
+            elif veri_source_count >= 0.40 and veri_max_sim >= 0.40:
+                prob_fake = min(prob_fake, 0.20)
         else:
             # Tri-Stream Calibrated Fusion Engine kết hợp cả 3 nguồn tín hiệu
-            cb_score = min(sty_vec[5] * 0.12, 0.35)        # clickbait_keyword_hits
-            excl_score = min(sty_vec[1] * 2.5, 0.25)       # exclamation_density
-            upper_score = min(sty_vec[0] * 1.2, 0.20)      # upper_ratio
-            urgency_score = min(sty_vec[10] * 0.1, 0.15)   # urgency_density
-            pronoun_score = min(sty_vec[11] * 0.1, 0.12)   # pronoun_density
-            teencode_score = min(sty_vec[12] * 1.5, 0.12)  # teencode_ratio
-            digit_score = min(sty_vec[6] * 0.04, 0.08)     # digit_in_title
+            cb_score = min(sty_vec_raw[5] * 0.12, 0.30)        # clickbait_keyword_hits
+            excl_score = min(sty_vec_raw[1] * 1.5, 0.15)       # exclamation_density (hạ trần để tránh áp đảo)
+            upper_score = min(sty_vec_raw[0] * 1.0, 0.15)      # upper_ratio
+            urgency_score = min(sty_vec_raw[10] * 0.1, 0.12)   # urgency_density
+            pronoun_score = min(sty_vec_raw[11] * 0.1, 0.10)   # pronoun_density
+            teencode_score = min(sty_vec_raw[12] * 1.2, 0.10)  # teencode_ratio
+            digit_score = min(sty_vec_raw[6] * 0.03, 0.06)     # digit_in_title
 
             veri_max_sim = veri_vec[0]
             veri_source_count = veri_vec[1]
             veri_penalty = veri_vec[3]
 
             corroboration_discount = (veri_max_sim * 0.35) + (veri_source_count * 0.25)
-            anomaly_boost = veri_penalty * 0.35
+            anomaly_boost = veri_penalty * 0.40
 
             base_risk = 0.20
             raw_risk = (
@@ -255,10 +276,10 @@ class FakeNewsPredictor:
 
         # 8. Tóm tắt đặc trưng
         stylometric_summary = {
-            "exclamation_density": round(float(sty_vec[1]), 3),
-            "clickbait_keyword_hits": int(sty_vec[5]),
-            "upper_ratio": round(float(sty_vec[0]), 3),
-            "title_body_ratio": round(float(sty_vec[4]), 3)
+            "exclamation_density": round(float(sty_vec_raw[1]), 3),
+            "clickbait_keyword_hits": int(sty_vec_raw[5]),
+            "upper_ratio": round(float(sty_vec_raw[0]), 3),
+            "title_body_ratio": round(float(sty_vec_raw[4]), 3)
         }
 
         cross_verification_summary = {

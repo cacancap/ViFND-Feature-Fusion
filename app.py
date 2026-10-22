@@ -198,23 +198,23 @@ def analyze_news(title: str, content: str, url: str = ""):
         </div>
         
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 15px; text-align: center;">
-            <div style="background: #F8F9FA; padding: 10px; border-radius: 8px;">
-                <div style="font-size: 12px; color: #6C757D;">XÁC SUẤT TIN GIẢ</div>
-                <div style="font-size: 20px; font-weight: bold; color: {badge_color};">{prob_fake_pct:.1f}%</div>
+            <div style="background: #F8F9FA; padding: 10px; border-radius: 8px; border: 1px solid #E2E8F0;">
+                <div style="font-size: 12px; color: #64748B !important; font-weight: 600;">XÁC SUẤT TIN GIẢ</div>
+                <div style="font-size: 20px; font-weight: bold; color: {badge_color} !important;">{prob_fake_pct:.1f}%</div>
             </div>
-            <div style="background: #F8F9FA; padding: 10px; border-radius: 8px;">
-                <div style="font-size: 12px; color: #6C757D;">ĐỘ TIN CẬY MÔ HÌNH</div>
-                <div style="font-size: 20px; font-weight: bold; color: #1D3557;">{confidence_score:.1f}%</div>
+            <div style="background: #F8F9FA; padding: 10px; border-radius: 8px; border: 1px solid #E2E8F0;">
+                <div style="font-size: 12px; color: #64748B !important; font-weight: 600;">ĐỘ TIN CẬY MÔ HÌNH</div>
+                <div style="font-size: 20px; font-weight: bold; color: #1D3557 !important;">{confidence_score:.1f}%</div>
             </div>
-            <div style="background: #F8F9FA; padding: 10px; border-radius: 8px;">
-                <div style="font-size: 12px; color: #6C757D;">THỜI GIAN XỬ LÝ</div>
-                <div style="font-size: 20px; font-weight: bold; color: #2A9D8F;">{elapsed:.2f}s</div>
+            <div style="background: #F8F9FA; padding: 10px; border-radius: 8px; border: 1px solid #E2E8F0;">
+                <div style="font-size: 12px; color: #64748B !important; font-weight: 600;">THỜI GIAN XỬ LÝ</div>
+                <div style="font-size: 20px; font-weight: bold; color: #0D9488 !important;">{elapsed:.2f}s</div>
             </div>
         </div>
         
-        <div style="font-size: 13px; color: #495057; border-top: 1px solid #E9ECEF; padding-top: 10px; line-height: 1.6;">
-            <b>Chỉ số văn phong:</b> Dấu chấm than: <code>{result['stylometric_summary'].get('exclamation_density', 0)}</code> | Từ giật gân: <code>{result['stylometric_summary'].get('clickbait_keyword_hits', 0)} từ</code> | Tỷ lệ viết hoa: <code>{result['stylometric_summary'].get('upper_ratio', 0) * 100:.1f}%</code><br>
-            <b>Kiểm chứng đa nguồn:</b> Độ tương đồng báo lớn: <code>{max_sim * 100:.1f}%</code> | Nguồn uy tín cùng xác nhận: <code>{source_count} nguồn</code>
+        <div style="font-size: 13px; color: #334155 !important; border-top: 1px solid #E2E8F0; padding-top: 10px; line-height: 1.8;">
+            <b>Chỉ số văn phong:</b> Dấu chấm than: <span style="font-family: monospace; background: #F1F5F9; color: #0F172A !important; padding: 2px 6px; border-radius: 4px; font-weight: 600; border: 1px solid #CBD5E1;">{result['stylometric_summary'].get('exclamation_density', 0)}</span> | Từ giật gân: <span style="font-family: monospace; background: #F1F5F9; color: #0F172A !important; padding: 2px 6px; border-radius: 4px; font-weight: 600; border: 1px solid #CBD5E1;">{result['stylometric_summary'].get('clickbait_keyword_hits', 0)} từ</span> | Tỷ lệ viết hoa: <span style="font-family: monospace; background: #F1F5F9; color: #0F172A !important; padding: 2px 6px; border-radius: 4px; font-weight: 600; border: 1px solid #CBD5E1;">{result['stylometric_summary'].get('upper_ratio', 0) * 100:.1f}%</span><br>
+            <b>Kiểm chứng đa nguồn:</b> Độ tương đồng báo lớn: <span style="font-family: monospace; background: #F1F5F9; color: #0F172A !important; padding: 2px 6px; border-radius: 4px; font-weight: 600; border: 1px solid #CBD5E1;">{max_sim * 100:.1f}%</span> | Nguồn uy tín cùng xác nhận: <span style="font-family: monospace; background: #F1F5F9; color: #0F172A !important; padding: 2px 6px; border-radius: 4px; font-weight: 600; border: 1px solid #CBD5E1;">{source_count} nguồn</span>
         </div>
     </div>
     """
@@ -222,12 +222,29 @@ def analyze_news(title: str, content: str, url: str = ""):
     # Tạo biểu đồ SHAP
     shap_fig = create_shap_plot(result["top_shap_factors"])
 
-    # Tạo tóm tắt giải thích bằng tiếng Việt tự nhiên
-    bullet_points = []
+    # Tạo tóm tắt giải thích bằng tiếng Việt tự nhiên với card tương phản cao (High Contrast)
+    shap_cards = []
     for f in result["top_shap_factors"]:
-        sign_str = "🔺 <b>Tăng nguy cơ tin giả</b>" if f["contribution"] > 0 else "🟢 <b>Giảm nguy cơ tin giả</b>"
-        bullet_points.append(
-            f"<li>{sign_str} (<code>{f['feature']}</code> = {f['contribution']:+.3f}): {f['description_vi']}</li>"
+        is_risk = f["contribution"] > 0
+        tag_bg = "#FEE2E2" if is_risk else "#DCFCE7"
+        tag_color = "#991B1B" if is_risk else "#166534"
+        tag_icon = "🔺" if is_risk else "🟢"
+        tag_label = "Tăng nguy cơ tin giả" if is_risk else "Giảm nguy cơ tin giả"
+
+        shap_cards.append(
+            f"<div style='margin-bottom: 8px; padding: 10px 12px; background: #FFFFFF; border-radius: 6px; border: 1px solid #E2E8F0; line-height: 1.5;'>"
+            f"  <div style='display: flex; align-items: center; gap: 8px; margin-bottom: 5px; flex-wrap: wrap;'>"
+            f"    <span style='background: {tag_bg} !important; color: {tag_color} !important; font-size: 11px; padding: 3px 8px; border-radius: 12px; font-weight: bold; display: inline-flex; align-items: center; gap: 4px;'>"
+            f"      <span>{tag_icon}</span> {tag_label}"
+            f"    </span>"
+            f"    <span style='font-family: Consolas, Monaco, monospace; background: #F1F5F9 !important; color: #0F172A !important; font-size: 12px; padding: 2px 7px; border-radius: 4px; font-weight: 600; border: 1px solid #CBD5E1;'>"
+            f"      {f['feature']} ({f['contribution']:+.3f})"
+            f"    </span>"
+            f"  </div>"
+            f"  <div style='color: #1E293B !important; font-size: 13px; font-weight: 500; padding-left: 2px;'>"
+            f"    {f['description_vi']}"
+            f"  </div>"
+            f"</div>"
         )
 
     # Khối bằng chứng đối chứng
@@ -239,24 +256,24 @@ def analyze_news(title: str, content: str, url: str = ""):
             sim_val = ev.get("similarity", 0.0) * 100
             url_link = ev.get("url", "#")
             evidence_html_items.append(
-                f"<div style='margin-bottom: 8px; padding: 8px; background: white; border-radius: 6px; border: 1px solid #E2E8F0;'>"
-                f"  <span style='background:#E2E8F0; color:#334155; font-size:11px; padding:2px 6px; border-radius:4px; font-weight:bold;'>{source_text}</span> "
-                f"  <a href='{url_link}' target='_blank' style='color:#1D4ED8; font-weight:500; text-decoration:none;'>{title_text}</a> "
-                f"  <span style='color:#64748B; font-size:12px;'>(Độ khớp: {sim_val:.1f}%)</span>"
+                f"<div style='margin-bottom: 8px; padding: 10px; background: white; border-radius: 6px; border: 1px solid #E2E8F0;'>"
+                f"  <span style='background:#E2E8F0 !important; color:#334155 !important; font-size:11px; padding:3px 8px; border-radius:4px; font-weight:bold;'>{source_text}</span> "
+                f"  <a href='{url_link}' target='_blank' style='color:#1D4ED8 !important; font-weight:600; text-decoration:none;'>{title_text}</a> "
+                f"  <span style='color:#64748B !important; font-size:12px;'>(Độ khớp: {sim_val:.1f}%)</span>"
                 f"</div>"
             )
         evidence_content = "".join(evidence_html_items)
     else:
-        evidence_content = "<div style='color:#DC2626; font-size:13px;'>⚠️ Không tìm thấy bài báo chính thống nào đưa tin về sự kiện này.</div>"
+        evidence_content = "<div style='color:#DC2626 !important; font-size:13px; font-weight:500; background:white; padding:10px; border-radius:6px; border:1px solid #FECACA;'>⚠️ Không tìm thấy bài báo chính thống nào đưa tin về sự kiện này.</div>"
 
     explanation_html = f"""
     <div style="background: #F8F9FA; border-radius: 8px; padding: 16px; margin-top: 10px; border: 1px solid #DEE2E6;">
-        <h4 style="margin-top: 0; color: #1D3557;">💡 Tóm Tắt Minh Giải Khoa Học (Explainable AI - SHAP):</h4>
-        <ul style="margin-bottom: 12px; padding-left: 20px; line-height: 1.6; font-size: 14px; color: #212529;">
-            {''.join(bullet_points)}
-        </ul>
+        <h4 style="margin-top: 0; color: #1D3557 !important; font-size: 15px; font-weight: bold;">💡 Tóm Tắt Minh Giải Khoa Học (Explainable AI - SHAP):</h4>
+        <div style="margin-bottom: 14px;">
+            {''.join(shap_cards)}
+        </div>
 
-        <h4 style="margin-top: 14px; margin-bottom: 8px; color: #1D3557;">📰 Bằng Chứng Đối Chiếu Từ Báo Chí Chính Thống (Verified Cross-Source Evidence):</h4>
+        <h4 style="margin-top: 14px; margin-bottom: 8px; color: #1D3557 !important; font-size: 15px; font-weight: bold;">📰 Bằng Chứng Đối Chiếu Từ Báo Chí Chính Thống (Verified Cross-Source Evidence):</h4>
         {evidence_content}
     </div>
     """

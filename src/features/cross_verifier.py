@@ -10,8 +10,9 @@ Chức năng:
    - veri_max_corroboration_sim: Độ tương đồng cao nhất với bài báo chính thống (0.0 - 1.0)
    - veri_verified_source_count: Số lượng nguồn báo chí lớn cùng đưa tin (chuẩn hóa 0.0 - 1.0)
    - veri_headline_cross_stance: Độ nhất quán giữa tiêu đề truy vấn và tiêu đề chính thống (0.0 - 1.0)
-   - veri_unverified_anomaly_penalty: Điểm phạt khi tin có dấu hiệu giật gân nhưng 0 nguồn chính thống nào xác nhận
-4. Trả về danh sách bài báo đối chứng (Evidence Articles) để hiển thị trực quan lên Web UI.
+   - veri_unverified_anomaly_penalty: Điểm phạt khi tin có dấu hiệu giật gân/bất thường nhưng 0 nguồn chính thống nào xác nhận
+4. Lọc thực thể địa lý (Entity Mismatch Guard) ngăn chặn việc nhầm lẫn sự kiện nước ngoài với sự kiện trong nước.
+5. Trả về danh sách bài báo đối chứng (Evidence Articles) để hiển thị trực quan lên Web UI.
 """
 
 import sys
@@ -46,14 +47,20 @@ VERI_FEATURE_DESCRIPTIONS = {
     "veri_max_corroboration_sim": "Mức độ tương đồng nội dung với các bài báo từ nguồn chính thống.",
     "veri_verified_source_count": "Số lượng cơ quan báo chí uy tín cùng đưa tin về sự kiện.",
     "veri_headline_cross_stance": "Độ nhất quán giữa tiêu đề truy vấn và thông tin từ báo chí chính thống.",
-    "veri_unverified_anomaly_penalty": "Điểm phạt bất thường khi đưa tin giật gân nhưng không có nguồn chính thống nào xác nhận."
+    "veri_unverified_anomaly_penalty": "Điểm phạt bất thường khi đưa tin nhưng không có nguồn chính thống nào xác nhận."
 }
 
 TRUSTED_DOMAINS = [
     "vnexpress.net", "tuoitre.vn", "vietnamnet.vn", "thanhnien.vn",
     "dantri.com.vn", "vtv.vn", "baochinhphu.vn", "nhandan.vn",
-    "cafef.vn", "plo.vn", "sggp.org.vn", "chinhphu.vn", "tingia.gov.vn"
+    "cafef.vn", "plo.vn", "sggp.org.vn", "chinhphu.vn", "tingia.gov.vn",
+    "moet.gov.vn", "moh.gov.vn", "cand.com.vn", "qdnd.vn"
 ]
+
+FOREIGN_ENTITIES = {
+    "pháp", "nga", "mỹ", "hoa kỳ", "trung quốc", "bắc kinh", "nhật", "nhật bản", 
+    "hàn", "hàn quốc", "anh", "luân đôn", "đức", "úc", "ukraine", "israel", "iran"
+}
 
 
 class CrossSourceVerifier:
@@ -65,7 +72,7 @@ class CrossSourceVerifier:
         self,
         corpus_path: Optional[str] = None,
         enable_web_search: bool = True,
-        web_search_timeout: float = 3.0
+        web_search_timeout: float = 3.5
     ):
         self.enable_web_search = enable_web_search
         self.web_search_timeout = web_search_timeout
@@ -102,7 +109,7 @@ class CrossSourceVerifier:
                 else:
                     df = pd.read_csv(target_file)
                 
-                # Chỉ lập chỉ mục các bài báo chính thống (label == 0)
+                # Lọc các bài báo chính thống (label == 0)
                 if "label" in df.columns:
                     verified_df = df[df["label"] == 0].copy()
                 else:
@@ -110,14 +117,13 @@ class CrossSourceVerifier:
 
                 if len(verified_df) > 0:
                     self.corpus_df = verified_df.reset_index(drop=True)
-                    # Tạo trường văn bản kết hợp để lập chỉ mục
                     combined_texts = (
                         self.corpus_df["title"].fillna("") + " " +
                         self.corpus_df["content"].fillna("")
                     ).tolist()
 
                     self.tfidf_vectorizer = TfidfVectorizer(
-                        max_features=5000,
+                        max_features=8000,
                         ngram_range=(1, 2)
                     )
                     self.corpus_tfidf = self.tfidf_vectorizer.fit_transform(combined_texts)
@@ -126,14 +132,33 @@ class CrossSourceVerifier:
 
     def _clean_query_keywords(self, title: str) -> str:
         """Trích xuất từ khóa trọng tâm từ tiêu đề bài viết để truy vấn."""
-        # Loại bỏ các tiền tố giật gân, dấu câu thừa
         clean = re.sub(r'^(CHẤN ĐỘNG|CẢNH BÁO|BÍ MẬT|BẬT MÍ|TIN NÓNG|NÓNG|HOT|HÉ LỘ)[\s\:\!\?]+', '', title, flags=re.IGNORECASE)
         clean = re.sub(r'[!\?\"\'\(\)\[\]\{\}\#\$\%]', ' ', clean)
         clean = re.sub(r'\s+', ' ', clean).strip()
-        words = clean.split()
-        if len(words) > 12:
-            clean = " ".join(words[:12])
+        
+        stop_words = {"và", "các", "những", "cho", "của", "tại", "từ", "năm", "về", "được", "ra", "vào", "qua"}
+        words = [w for w in clean.split() if w.lower() not in stop_words]
+        if not words:
+            words = clean.split()
+            
+        if len(words) > 8:
+            clean = " ".join(words[:8])
+        else:
+            clean = " ".join(words)
         return clean
+
+    def _has_foreign_entity_conflict(self, query: str, candidate_title: str) -> bool:
+        """Kiểm tra xem ứng viên tìm thấy có bị xung đột thực thể địa lý nước ngoài hay không."""
+        q_lower = query.lower()
+        cand_lower = candidate_title.lower()
+        
+        query_has_foreign = any(re.search(rf'\b{fe}\b', q_lower) for fe in FOREIGN_ENTITIES)
+        cand_has_foreign = any(re.search(rf'\b{fe}\b', cand_lower) for fe in FOREIGN_ENTITIES)
+        
+        # Nếu bài viết hỏi về trong nước mà kết quả trả về là sự kiện ở nước ngoài -> Xung đột!
+        if cand_has_foreign and not query_has_foreign:
+            return True
+        return False
 
     def _query_local_corpus(self, title: str, content: str) -> List[Dict[str, Any]]:
         """Truy vấn kho lưu trữ báo chính thống cục bộ."""
@@ -149,10 +174,16 @@ class CrossSourceVerifier:
             results = []
             for idx in top_indices:
                 score = float(sims[idx])
-                if score > 0.05:
-                    row = self.corpus_df.iloc[idx]
+                row = self.corpus_df.iloc[idx]
+                cand_title = str(row.get("title", ""))
+                
+                # Áp dụng bộ lọc xung đột thực thể
+                if self._has_foreign_entity_conflict(title, cand_title):
+                    score *= 0.15
+                    
+                if score > 0.10:
                     results.append({
-                        "title": str(row.get("title", "")),
+                        "title": cand_title,
                         "source": str(row.get("source", "Báo chính thống")),
                         "url": str(row.get("url", "")),
                         "similarity": round(score, 3)
@@ -192,16 +223,23 @@ class CrossSourceVerifier:
                     item_title = parts[0].strip()
                     item_source = parts[1].strip()
 
-                # Tính độ tương đồng từ vựng Jaccard cơ bản giữa 2 tiêu đề
                 q_tokens = set(re.findall(r'\w+', query.lower()))
                 cand_tokens = set(re.findall(r'\w+', item_title.lower()))
-                jaccard = len(q_tokens & cand_tokens) / max(len(q_tokens | cand_tokens), 1)
+                overlap = len(q_tokens & cand_tokens)
+                jaccard = overlap / max(len(q_tokens | cand_tokens), 1)
+                recall_sim = overlap / max(len(q_tokens), 1)
+                
+                sim_score = 0.65 * recall_sim + 0.35 * jaccard
+
+                # Nếu bị xung đột thực thể địa lý nước ngoài (ví dụ Dân trí đưa tin Pháp giới nghiêm) -> Phạt nặng sim_score
+                if self._has_foreign_entity_conflict(title, item_title):
+                    sim_score *= 0.15
 
                 results.append({
                     "title": item_title,
                     "source": item_source,
                     "url": item_link,
-                    "similarity": round(float(jaccard), 3)
+                    "similarity": round(float(sim_score), 3)
                 })
             return results
         except Exception:
@@ -216,10 +254,6 @@ class CrossSourceVerifier:
     ) -> Tuple[np.ndarray, List[Dict[str, Any]]]:
         """
         Trích xuất 4 đặc trưng kiểm chứng toán học và danh sách bằng chứng đối chứng.
-        
-        Trả về:
-        - feature_vector: np.ndarray shape (4,) dtype float32
-        - evidence_articles: List[Dict] danh sách bài báo đối chứng
         """
         title = title.strip() if isinstance(title, str) else ""
         content = content.strip() if isinstance(content, str) else ""
@@ -230,9 +264,9 @@ class CrossSourceVerifier:
         local_results = self._query_local_corpus(title, content)
         evidence_list.extend(local_results)
 
-        # 2. Nếu điểm cao nhất của kho cục bộ thấp (< 0.40) và bật web search, gọi tìm kiếm online
+        # 2. Bổ sung truy vấn Google News RSS để tìm kiếm đối chứng diện rộng
         max_local_sim = max([r["similarity"] for r in local_results], default=0.0)
-        if max_local_sim < 0.40 and self.enable_web_search:
+        if max_local_sim < 0.45 and self.enable_web_search:
             web_results = self._query_google_news_rss(title)
             evidence_list.extend(web_results)
 
@@ -242,44 +276,57 @@ class CrossSourceVerifier:
         # 3. Tính toán 4 đặc trưng kiểm chứng:
         if evidence_list:
             max_sim = float(evidence_list[0]["similarity"])
-            # Đếm số lượng nguồn uy tín khác nhau có độ tương đồng >= 0.25
-            verified_sources = {
-                r["source"].lower() for r in evidence_list
-                if r["similarity"] >= 0.25 and r["source"]
-            }
-            source_count = float(min(len(verified_sources), 5)) / 5.0
-            
-            # Tính độ tương đồng lập trường tiêu đề (stance)
             top_evidence_title = evidence_list[0]["title"]
             q_set = set(re.findall(r'\w+', title.lower()))
             e_set = set(re.findall(r'\w+', top_evidence_title.lower()))
             headline_stance = float(len(q_set & e_set) / max(len(q_set | e_set), 1))
+
+            # Nguồn uy tín xác nhận phải đạt độ tương đồng thực thể cao (>= 0.45)
+            verified_sources = {
+                r["source"].lower() for r in evidence_list
+                if r["similarity"] >= 0.45 and r["source"]
+            }
+            source_count = float(min(len(verified_sources), 5)) / 5.0
         else:
             max_sim = 0.0
             source_count = 0.0
             headline_stance = 0.0
 
         # 4. Tính điểm phạt bất thường (Unverified Anomaly Penalty)
-        # Nếu có dấu hiệu giật gân (viết hoa nhiều, dấu !, từ khóa clickbait) nhưng không có nguồn nào xác nhận
         sensational_cues = 0.0
         if stylometric_vector is not None and len(stylometric_vector) >= 6:
-            # stylometric_vector: [upper_ratio, exclamation_density, ..., clickbait_hits, ...]
             upper_ratio = stylometric_vector[0]
             excl_density = stylometric_vector[1]
             clickbait_hits = stylometric_vector[5]
-            sensational_cues = (upper_ratio * 1.5) + (excl_density * 2.0) + (min(clickbait_hits, 4) * 0.2)
+            sensational_cues = (upper_ratio * 1.0) + (min(excl_density, 0.04) * 1.5) + (min(clickbait_hits, 4) * 0.15)
         else:
-            # Ước tính nhanh từ chuỗi văn bản nếu chưa có vector hình thức
             has_clickbait_words = bool(re.search(r'(chấn động|kinh hoàng|100%|lộ clip|thần kỳ|bài thuốc)', title, re.IGNORECASE))
             has_excl = "!" in title
             has_upper = any(w.isupper() and len(w) > 2 for w in title.split())
-            sensational_cues = (0.4 if has_clickbait_words else 0.0) + (0.3 if has_excl else 0.0) + (0.3 if has_upper else 0.0)
+            sensational_cues = (0.3 if has_clickbait_words else 0.0) + (0.2 if has_excl else 0.0) + (0.2 if has_upper else 0.0)
 
-        # Phạt nặng khi sensational_cues cao mà max_sim hoặc source_count = 0
-        if max_sim < 0.25:
-            anomaly_penalty = float(np.clip(sensational_cues * 0.8 + (1.0 - max_sim) * 0.3, 0.0, 1.0))
+        # Nhận diện các tuyên bố bất thường cực đoan hoặc lừa đảo phishing mã OTP / tặng tiền
+        has_breaking_curfew = bool(re.search(r'(giới nghiêm|khẩn cấp|phong tỏa|tạm dừng toàn bộ giao thông)', title, re.IGNORECASE))
+        has_phishing_scam = bool(re.search(r'(nhập.*otp|mã otp|bấm link|nhận.*tiền mặt|tri ân.*nhận ngay|\.online|\.xyz)', title + " " + content, re.IGNORECASE))
+
+        # Đánh giá mức phạt:
+        if source_count >= 0.2 and max_sim >= 0.45:
+            # Có nguồn chính thống xác nhận sự kiện
+            anomaly_penalty = float(np.clip(sensational_cues * 0.10 * (1.0 - max_sim), 0.0, 0.15))
         else:
-            anomaly_penalty = float(np.clip(sensational_cues * 0.2 * (1.0 - max_sim), 0.0, 0.5))
+            # Không có cơ quan báo chí chính thống nào xác nhận:
+            if has_breaking_curfew:
+                # Tuyên bố an ninh quốc gia (lệnh giới nghiêm) mà 0 báo nào xác nhận -> Phạt tối đa!
+                anomaly_penalty = 0.95
+            elif has_phishing_scam:
+                # Dấu hiệu lừa đảo tài chính / OTP -> Phạt tối đa!
+                anomaly_penalty = 0.90
+            elif sensational_cues >= 0.20:
+                # Giật gân câu view mà 0 có nguồn xác nhận -> Phạt nặng
+                anomaly_penalty = float(np.clip(0.65 + sensational_cues * 0.35, 0.0, 1.0))
+            else:
+                # Tin tức trung tính bình thường mà chỉ thiếu đối chiếu -> Phạt nhẹ
+                anomaly_penalty = float(np.clip((1.0 - max_sim) * 0.15, 0.0, 0.20))
 
         feature_vector = np.array([
             np.clip(max_sim, 0.0, 1.0),
@@ -293,21 +340,9 @@ class CrossSourceVerifier:
 
 if __name__ == "__main__":
     verifier = CrossSourceVerifier(enable_web_search=True)
-    
-    test_title_real = "Ngân hàng Nhà nước duy trì mặt bằng lãi suất điều hành ổn định"
-    test_content_real = "Ngân hàng Nhà nước tiếp tục chỉ đạo các tổ chức tín dụng tiết giảm chi phí nhằm giảm lãi suất cho vay."
-    vec_real, ev_real = verifier.verify_article(test_title_real, test_content_real)
-    print("=== TEST REAL ARTICLE ===")
-    print(f"Features: {vec_real}")
-    print(f"Evidence count: {len(ev_real)}")
-    for ev in ev_real[:2]:
-        print(f" - [{ev['source']}] {ev['title']} (sim={ev['similarity']})")
-
-    print("\n=== TEST FAKE ARTICLE ===")
-    test_title_fake = "CHẤN ĐỘNG: Phát hiện phương thuốc nam chữa khỏi 100% ung thư trong 7 ngày!!!"
-    test_content_fake = "Bà con ơi chia sẻ ngay kẻo bài viết bị gỡ khỏi mạng xã hội!"
-    vec_fake, ev_fake = verifier.verify_article(test_title_fake, test_content_fake)
-    print(f"Features: {vec_fake}")
-    print(f"Evidence count: {len(ev_fake)}")
-    for ev in ev_fake[:2]:
-        print(f" - [{ev['source']}] {ev['title']} (sim={ev['similarity']})")
+    t = "Chính phủ ban hành lệnh giới nghiêm và tạm dừng toàn bộ giao thông công cộng từ 22h đêm"
+    c = "Theo văn bản khẩn, toàn bộ xe buýt sẽ dừng hoạt động."
+    vec, ev = verifier.verify_article(t, c)
+    print("Features for fake curfew:", vec)
+    if ev:
+        print("Top evidence:", ev[0]["source"], "-", ev[0]["title"], "sim:", ev[0]["similarity"])

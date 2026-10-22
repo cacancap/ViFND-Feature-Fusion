@@ -69,42 +69,38 @@ def run_training_and_evaluation():
     labels = df["label"].values.astype(int)
 
     # Stylometrics 15D
-    X_stylo = np.zeros((len(df), 15), dtype=np.float32)
+    X_stylo_raw = np.zeros((len(df), 15), dtype=np.float32)
     # Verification 4D
     X_veri = np.zeros((len(df), 4), dtype=np.float32)
 
     for i, (t, c) in enumerate(zip(titles, contents)):
         v_sty = stylo_extractor.extract_single(t, c)
-        X_stylo[i] = v_sty
+        X_stylo_raw[i] = v_sty
         v_ver, _ = cross_verifier.verify_article(t, c, stylometric_vector=v_sty)
         X_veri[i] = v_ver
 
-    # Semantic Embeddings 768D (TF-IDF projected to 768 with unit L2 norm to simulate PhoBERT embeddings)
-    tfidf = TfidfVectorizer(max_features=768, ngram_range=(1, 2))
-    full_texts = [f"{t} {c}" for t, c in zip(titles, contents)]
-    X_sem_raw = tfidf.fit_transform(full_texts).toarray().astype(np.float32)
-    # Pad to 768 if needed and L2 normalize
-    if X_sem_raw.shape[1] < 768:
-        pad = np.zeros((len(df), 768 - X_sem_raw.shape[1]), dtype=np.float32)
-        X_sem_raw = np.hstack([X_sem_raw, pad])
-    norms = np.linalg.norm(X_sem_raw, axis=1, keepdims=True)
-    X_sem = X_sem_raw / (norms + 1e-8)
+    # Chuẩn hóa Stylometrics qua StandardScaler
+    X_stylo = stylo_extractor.fit_transform(X_stylo_raw)
+
+    # Semantic Embeddings 768D chuẩn L2 đồng bộ trực tiếp với PhoBertEmbedder
+    sem_list = [phobert_embedder.encode_single_article(t, c) for t, c in zip(titles, contents)]
+    X_sem = np.vstack(sem_list).astype(np.float32)
 
     t_feat = time.perf_counter() - t0_feat
     print(f"      - Hoàn tất trích xuất đặc trưng trong {t_feat:.2f}s:")
-    print(f"        * X_semantic:      {X_sem.shape} (768 chiều)")
-    print(f"        * X_stylometric:   {X_stylo.shape} (15 chiều)")
-    print(f"        * X_verification:  {X_veri.shape} (4 chiều)")
+    print(f"        * X_semantic:      {X_sem.shape} (768 chiều, L2 unit norm)")
+    print(f"        * X_stylometric:   {X_stylo.shape} (15 chiều, Z-score scaled)")
+    print(f"        * X_verification:  {X_veri.shape} (4 chiều, [0, 1] bounded)")
 
     # 2. Xây dựng các không gian đặc trưng cho Ablation Study
-    X_baseline = X_sem[:, :300]                       # TF-IDF 300D
+    X_baseline = X_sem[:, :300]                       # TF-IDF / Semantic 300D
     X_sty_only = X_stylo                              # 15D
     X_sem_only = X_sem                                # 768D
     X_dual_fusion = np.hstack([X_sem, X_stylo])       # 783D
     X_tri_fusion = np.hstack([X_sem, X_stylo, X_veri]) # 787D
 
     experiments = {
-        "1. Baseline (TF-IDF + Logistic Regression)": (X_baseline, "lr"),
+        "1. Baseline (Semantics 300D + Logistic Regression)": (X_baseline, "lr"),
         "2. Pure Stylometrics (15D + XGBoost)": (X_sty_only, "xgb"),
         "3. Pure Semantics (PhoBERT 768D + XGBoost)": (X_sem_only, "xgb"),
         "4. Dual-Stream Fusion (PhoBERT + Stylo 783D)": (X_dual_fusion, "xgb"),
@@ -128,10 +124,16 @@ def run_training_and_evaluation():
             else:
                 clf = xgb.XGBClassifier(
                     n_estimators=120,
-                    max_depth=4,
-                    learning_rate=0.08,
-                    subsample=0.85,
-                    colsample_bytree=0.85,
+                    max_depth=3,
+                    learning_rate=0.05,
+                    subsample=0.80,
+                    colsample_bytree=0.60,
+                    colsample_bylevel=0.60,
+                    colsample_bynode=0.40,
+                    reg_alpha=1.5,
+                    reg_lambda=5.0,
+                    max_delta_step=1.0,
+                    min_child_weight=3,
                     random_state=42,
                     eval_metric="logloss"
                 )
@@ -163,11 +165,17 @@ def run_training_and_evaluation():
     )
 
     final_model = xgb.XGBClassifier(
-        n_estimators=150,
-        max_depth=4,
-        learning_rate=0.07,
-        subsample=0.85,
-        colsample_bytree=0.85,
+        n_estimators=120,
+        max_depth=3,
+        learning_rate=0.05,
+        subsample=0.80,
+        colsample_bytree=0.60,
+        colsample_bylevel=0.60,
+        colsample_bynode=0.40,
+        reg_alpha=1.5,
+        reg_lambda=5.0,
+        max_delta_step=1.0,
+        min_child_weight=3,
         random_state=42,
         eval_metric="logloss"
     )
@@ -187,6 +195,11 @@ def run_training_and_evaluation():
     checkpoint_file = checkpoints_dir / "best_fusion_xgboost.json"
     final_model.save_model(str(checkpoint_file))
     print(f"      ✅ Đã lưu checkpoint mô hình xuất sắc vào: {checkpoint_file}")
+
+    # Lưu trọng số scaler
+    scaler_file = checkpoints_dir / "fusion_scaler.json"
+    stylo_extractor.save_scaler(scaler_file)
+    print(f"      ✅ Đã lưu trọng số StandardScaler vào: {scaler_file}")
 
     # Lưu báo cáo JSON
     reports_dir = PROJECT_ROOT / "outputs" / "reports"

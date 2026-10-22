@@ -1,45 +1,45 @@
 {
-  "timestamp": "2026-10-22T09:20:45Z",
+  "timestamp": "2026-10-22T15:14:34Z",
   "dataset_size": 600,
   "cv_folds": 5,
   "cross_validation_ablation": {
-    "1. Baseline (TF-IDF + Logistic Regression)": {
-      "accuracy": 0.9983333333333334,
-      "macro_f1": 0.9983332175845545,
-      "precision": 0.9983606557377049,
-      "recall": 0.9983333333333334,
-      "roc_auc": 1.0,
+    "1. Baseline (Semantics 300D + Logistic Regression)": {
+      "accuracy": 0.9633333333333333,
+      "macro_f1": 0.9632610653774145,
+      "precision": 0.9654640658226651,
+      "recall": 0.9633333333333333,
+      "roc_auc": 0.9956666666666667,
       "dim": 300
     },
     "2. Pure Stylometrics (15D + XGBoost)": {
-      "accuracy": 0.9983333333333334,
-      "macro_f1": 0.9983332175845545,
-      "precision": 0.9983606557377049,
-      "recall": 0.9983333333333334,
-      "roc_auc": 1.0,
+      "accuracy": 0.9833333333333334,
+      "macro_f1": 0.9833182618358158,
+      "precision": 0.9840554000042747,
+      "recall": 0.9833333333333332,
+      "roc_auc": 0.9961111111111111,
       "dim": 15
     },
     "3. Pure Semantics (PhoBERT 768D + XGBoost)": {
-      "accuracy": 0.9966666666666667,
-      "macro_f1": 0.996666435169109,
-      "precision": 0.9967213114754099,
-      "recall": 0.9966666666666667,
-      "roc_auc": 1.0,
+      "accuracy": 0.9650000000000001,
+      "macro_f1": 0.9649418618151431,
+      "precision": 0.9672044085448335,
+      "recall": 0.9650000000000001,
+      "roc_auc": 0.9887777777777778,
       "dim": 768
     },
     "4. Dual-Stream Fusion (PhoBERT + Stylo 783D)": {
-      "accuracy": 0.9983333333333334,
-      "macro_f1": 0.9983332175845545,
-      "precision": 0.9983606557377049,
-      "recall": 0.9983333333333334,
-      "roc_auc": 1.0,
+      "accuracy": 0.9866666666666667,
+      "macro_f1": 0.9866580933388948,
+      "precision": 0.987245505023797,
+      "recall": 0.9866666666666667,
+      "roc_auc": 0.9987777777777778,
       "dim": 783
     },
     "5. Tri-Stream Fusion (PhoBERT + Stylo + Veri 787D) [PROPOSED]": {
-      "accuracy": 0.9983333333333334,
-      "macro_f1": 0.9983332175845545,
-      "precision": 0.9983606557377049,
-      "recall": 0.9983333333333334,
+      "accuracy": 1.0,
+      "macro_f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
       "roc_auc": 1.0,
       "dim": 787
     }
