@@ -3,10 +3,10 @@ ViFND - Vietnamese Fake News Detection
 Module: app.py
 Vai trò: Thành viên 5 (TV5) - Giao diện Web Trực quan Tinh gọn (Gradio 4.x/5.x)
 
-Tuân thủ nguyên tắc KISS (Keep It Simple, Stupid) với 3 khối chức năng cốt lõi:
-- KHỐI 1: Module Đầu vào (Dán URL tự cào hoặc Nhập văn bản tùy ý)
-- KHỐI 2: Module Dự đoán (Nhãn phân loại, Đồng hồ đo rủi ro, Điểm tin cậy)
-- KHỐI 3: Module Minh giải XAI (Biểu đồ thanh ngang SHAP Waterfall & Tóm tắt tiếng Việt)
+Tuân thủ nguyên tắc KISS (Keep It Simple, Stupid) với các khối chức năng cốt lõi:
+- KHỐI 1: Module Đầu vào (Dán URL tự cào hoặc Nhập văn bản tùy ý, Chọn nhanh bài mẫu)
+- KHỐI 2: Module Dự đoán (Nhãn phân loại, Đồng hồ đo rủi ro, Điểm tin cậy, Chỉ số đối soát đa nguồn)
+- KHỐI 3: Module Minh giải XAI (Biểu đồ thanh ngang SHAP Waterfall & Bằng chứng đối chứng từ Báo chí Chính thống)
 """
 
 import sys
@@ -79,83 +79,69 @@ def crawl_url_article(url: str):
             title = h1.get_text(strip=True)
         elif soup.title and soup.title.get_text(strip=True):
             title = soup.title.get_text(strip=True)
-            # Cắt bỏ tên báo ở đuôi (ví dụ: "... - Báo VnExpress")
-            title = title.split(" - ")[0].split(" | ")[0]
 
-        # 2. Trích xuất thân bài
+        # 2. Bóc tách nội dung thân bài theo thẻ <p>
         paragraphs = []
-        # Các class chứa bài viết phổ biến
-        article_elem = soup.find("article") or soup.find(class_=lambda c: c and any(k in str(c).lower() for k in ["detail", "content", "fck"]))
-        if article_elem:
-            p_tags = article_elem.find_all("p")
-        else:
-            p_tags = soup.find_all("p")
-
-        for p in p_tags:
-            text = p.get_text(strip=True)
-            # Bỏ các đoạn ngắn vô nghĩa hoặc bản quyền
-            if len(text) > 40 and not any(k in text.lower() for k in ["bản quyền", "copyright", "hotline", "liên hệ quảng cáo"]):
-                paragraphs.append(text)
-
-        content = "\n\n".join(paragraphs[:8])
+        for p in soup.find_all("p"):
+            p_text = p.get_text(strip=True)
+            # Lọc bỏ các dòng ngắn hoặc quảng cáo
+            if len(p_text) > 40 and not any(kw in p_text.lower() for kw in ["quảng cáo", "liên hệ", "hotline", "bản quyền", "xem thêm"]):
+                paragraphs.append(p_text)
+                
+        content = " ".join(paragraphs[:15]) # Lấy tối đa 15 đoạn văn đầu
         elapsed = time.time() - start_time
 
-        if not title and not content:
-            return "", "", "⚠️ Không thể trích xuất tự động từ trang này (có thể do trang chặn bot). Vui lòng nhập bằng tay."
+        if not content and not title:
+            return "", "", f"⚠️ Không bóc tách được nội dung tự động ({elapsed:.2f}s). Vui lòng sao chép văn bản thủ công."
 
-        return title, content, f"✅ Đã trích xuất thành công từ nguồn trong {elapsed:.2f} giây."
-
+        return title, content, f"✅ Đã cào thành công trong {elapsed:.2f}s ({len(paragraphs)} đoạn văn)."
     except Exception as e:
-        return "", "", f"❌ Lỗi khi tải URL: {str(e)}"
+        return "", "", f"❌ Lỗi khi cào URL: {str(e)}"
 
 
-def create_shap_plot(top_factors: list) -> go.Figure:
+def create_shap_plot(top_factors):
     """
-    Tạo biểu đồ thanh ngang SHAP Waterfall minh giải quyết định bằng Plotly.
-    Thanh đỏ: Tăng rủi ro tin giả (Positive SHAP).
-    Thanh xanh: Giảm rủi ro tin giả (Negative SHAP).
+    Tạo biểu đồ thanh ngang SHAP Waterfall bằng Plotly.
+    Thanh màu đỏ: Đẩy về Tin giả / Giật gân (+)
+    Thanh màu xanh: Đẩy về Tin thật / Xác thực (-)
     """
     if not top_factors:
-        fig = go.Figure()
-        fig.update_layout(title="Chưa có dữ liệu giải thích SHAP")
-        return fig
+        return go.Figure()
 
-    # Đảo ngược thứ tự để yếu tố quan trọng nhất nằm trên cùng
-    factors = list(reversed(top_factors))
-    features = [f["feature"] for f in factors]
-    contributions = [f["contribution"] for f in factors]
+    # Sắp xếp để hiển thị từ trên xuống dưới
+    factors_sorted = list(reversed(top_factors))
     
-    colors = [
-        "#E63946" if c > 0 else "#2A9D8F"
-        for c in contributions
-    ]
-    
-    text_labels = [f"{c:+.3f}" for c in contributions]
+    labels = [f["feature"] for f in factors_sorted]
+    values = [f["contribution"] for f in factors_sorted]
+    colors = ["#E63946" if v > 0 else "#2A9D8F" for v in values]
+    hover_texts = [f"{f['description_vi']}<br>Đóng góp SHAP: {v:+.3f}" for f, v in zip(factors_sorted, values)]
 
     fig = go.Figure(go.Bar(
-        x=contributions,
-        y=features,
-        orientation='h',
-        marker=dict(color=colors, line=dict(color="#1D3557", width=1.5)),
-        text=text_labels,
+        x=values,
+        y=labels,
+        orientation="h",
+        marker_color=colors,
+        text=[f"{v:+.3f}" for v in values],
         textposition="outside",
+        hovertext=hover_texts,
+        hoverinfo="text"
     ))
 
     fig.update_layout(
         title=dict(
-            text="<b>MỨC ĐỘ ĐÓNG GÓP CỦA CÁC ĐẶC TRƯNG VÀO QUYẾT ĐỊNH (SHAP VALUES)</b>",
-            font=dict(size=14, color="#1D3557")
+            text="<b>Phân Rã Đóng Góp Đặc Trưng SHAP (TreeExplainer)</b>",
+            font=dict(size=15, color="#1D3557")
         ),
         xaxis=dict(
-            title="Giá trị SHAP (Dương: Đẩy về Tin giả | Âm: Đẩy về Tin thật)",
+            title="Giá trị SHAP (Dương: Tăng rủi ro Tin giả | Âm: Tăng độ tin cậy Tin thật)",
             zeroline=True,
             zerolinecolor="#333",
             zerolinewidth=2,
             gridcolor="#E0E0E0"
         ),
         yaxis=dict(title=""),
-        margin=dict(l=140, r=40, t=50, b=40),
-        height=320,
+        margin=dict(l=180, r=40, t=50, b=40),
+        height=340,
         plot_bgcolor="#F8F9FA",
         paper_bgcolor="#FFFFFF"
     )
@@ -165,7 +151,7 @@ def create_shap_plot(top_factors: list) -> go.Figure:
 def analyze_news(title: str, content: str, url: str = ""):
     """
     Quy trình phân tích chính:
-    Nhận bài báo -> Trích xuất Stylometrics & PhoBERT -> Late Fusion -> SHAP Explanation.
+    Nhận bài báo -> Trích xuất Stylometrics & PhoBERT & Kiểm chứng đa nguồn -> Late Fusion -> SHAP Explanation.
     """
     title = title.strip()
     content = content.strip()
@@ -195,6 +181,11 @@ def analyze_news(title: str, content: str, url: str = ""):
     prob_fake_pct = result["probability_fake"] * 100
     confidence_score = result["confidence_score"]
 
+    veri_summary = result.get("cross_verification_summary", {})
+    max_sim = veri_summary.get("max_corroboration_sim", 0.0)
+    source_count = int(round(veri_summary.get("verified_source_count", 0.0) * 5.0))
+    evidence_list = result.get("evidence_articles", [])
+
     result_html = f"""
     <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-left: 6px solid {badge_color};">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
@@ -221,11 +212,9 @@ def analyze_news(title: str, content: str, url: str = ""):
             </div>
         </div>
         
-        <div style="font-size: 13px; color: #495057; border-top: 1px solid #E9ECEF; pt: 10px; padding-top: 10px;">
-            <b>Chỉ số hình thức:</b> 
-            Dấu chấm than: <code>{result['stylometric_summary'].get('exclamation_density', 0)}</code> | 
-            Từ giật gân: <code>{result['stylometric_summary'].get('clickbait_keyword_hits', 0)} từ</code> | 
-            Tỷ lệ viết hoa: <code>{result['stylometric_summary'].get('upper_ratio', 0) * 100:.1f}%</code>
+        <div style="font-size: 13px; color: #495057; border-top: 1px solid #E9ECEF; padding-top: 10px; line-height: 1.6;">
+            <b>Chỉ số văn phong:</b> Dấu chấm than: <code>{result['stylometric_summary'].get('exclamation_density', 0)}</code> | Từ giật gân: <code>{result['stylometric_summary'].get('clickbait_keyword_hits', 0)} từ</code> | Tỷ lệ viết hoa: <code>{result['stylometric_summary'].get('upper_ratio', 0) * 100:.1f}%</code><br>
+            <b>Kiểm chứng đa nguồn:</b> Độ tương đồng báo lớn: <code>{max_sim * 100:.1f}%</code> | Nguồn uy tín cùng xác nhận: <code>{source_count} nguồn</code>
         </div>
     </div>
     """
@@ -241,12 +230,34 @@ def analyze_news(title: str, content: str, url: str = ""):
             f"<li>{sign_str} (<code>{f['feature']}</code> = {f['contribution']:+.3f}): {f['description_vi']}</li>"
         )
 
+    # Khối bằng chứng đối chứng
+    evidence_html_items = []
+    if evidence_list:
+        for ev in evidence_list[:3]:
+            title_text = ev.get("title", "")
+            source_text = ev.get("source", "Báo chính thống")
+            sim_val = ev.get("similarity", 0.0) * 100
+            url_link = ev.get("url", "#")
+            evidence_html_items.append(
+                f"<div style='margin-bottom: 8px; padding: 8px; background: white; border-radius: 6px; border: 1px solid #E2E8F0;'>"
+                f"  <span style='background:#E2E8F0; color:#334155; font-size:11px; padding:2px 6px; border-radius:4px; font-weight:bold;'>{source_text}</span> "
+                f"  <a href='{url_link}' target='_blank' style='color:#1D4ED8; font-weight:500; text-decoration:none;'>{title_text}</a> "
+                f"  <span style='color:#64748B; font-size:12px;'>(Độ khớp: {sim_val:.1f}%)</span>"
+                f"</div>"
+            )
+        evidence_content = "".join(evidence_html_items)
+    else:
+        evidence_content = "<div style='color:#DC2626; font-size:13px;'>⚠️ Không tìm thấy bài báo chính thống nào đưa tin về sự kiện này.</div>"
+
     explanation_html = f"""
     <div style="background: #F8F9FA; border-radius: 8px; padding: 16px; margin-top: 10px; border: 1px solid #DEE2E6;">
-        <h4 style="margin-top: 0; color: #1D3557;">💡 Tóm Tắt Minh Giải Khoa Học (Explainable AI):</h4>
-        <ul style="margin-bottom: 0; padding-left: 20px; line-height: 1.6; font-size: 14px; color: #212529;">
+        <h4 style="margin-top: 0; color: #1D3557;">💡 Tóm Tắt Minh Giải Khoa Học (Explainable AI - SHAP):</h4>
+        <ul style="margin-bottom: 12px; padding-left: 20px; line-height: 1.6; font-size: 14px; color: #212529;">
             {''.join(bullet_points)}
         </ul>
+
+        <h4 style="margin-top: 14px; margin-bottom: 8px; color: #1D3557;">📰 Bằng Chứng Đối Chiếu Từ Báo Chí Chính Thống (Verified Cross-Source Evidence):</h4>
+        {evidence_content}
     </div>
     """
 
@@ -275,10 +286,10 @@ with gr.Blocks(title="ViFND - Hệ Thống Phát Hiện Tin Giả Tiếng Việt
     gr.HTML("""
     <div style="text-align: center; padding: 15px 0 25px 0; border-bottom: 2px solid #E9ECEF; margin-bottom: 20px;">
         <h1 style="color: #1D3557; margin-bottom: 5px; font-size: 28px;">
-            🇻🇳 HỆ THỐNG PHÁT HIỆN TIN GIẢ TIẾNG VIỆT
+            🇻🇳 HỆ THỐNG PHÁT HIỆN TIN GIẢ TIẾNG VIỆT (ViFND)
         </h1>
         <p style="color: #457B9D; font-size: 15px; margin: 0;">
-            Hợp Nhất Đặc Trưng Muộn: <b>15 Chỉ Số Hình Thức (Stylometrics)</b> ⊕ <b>768 Chiều Ngữ Nghĩa (PhoBERT)</b> ⊕ <b>Minh Giải XAI (SHAP)</b>
+            Hợp Nhất Ba Luồng: <b>15 Chỉ Số Hình Thức (Stylometrics)</b> ⊕ <b>768 Chiều Ngữ Nghĩa (PhoBERT)</b> ⊕ <b>Kiểm Chứng Chéo Đa Nguồn (Hybrid)</b> ⊕ <b>Minh Giải XAI (SHAP)</b>
         </p>
     </div>
     """)
@@ -334,7 +345,7 @@ with gr.Blocks(title="ViFND - Hệ Thống Phát Hiện Tin Giả Tiếng Việt
             </div>
             """)
 
-            gr.Markdown("### 🔍 KHỐI 3: MINH GIẢI QUYẾT ĐỊNH XAI (SHAP WATERFALL)")
+            gr.Markdown("### 🔍 KHỐI 3: MINH GIẢI QUYẾT ĐỊNH XAI (SHAP WATERFALL) & ĐỐI CHIẾU")
             shap_plot_output = gr.Plot(label="Biểu đồ phân rã SHAP")
             explanation_output = gr.HTML("")
 

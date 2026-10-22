@@ -5,7 +5,7 @@ Vai trò: Thành viên 5 (TV5) - REST API Microservice (FastAPI)
 
 Cung cấp các endpoints chuẩn RESTful phục vụ tích hợp hệ thống bên thứ ba và Web UI:
 - GET  /health          : Kiểm tra trạng thái hệ thống
-- POST /api/v1/predict  : Phân loại tin tức và trả về độ tin cậy
+- POST /api/v1/predict  : Phân loại tin tức, trả về độ tin cậy và bằng chứng đối chứng
 - POST /api/v1/explain  : Phân tích chi tiết các trọng số SHAP giải thích mô hình
 """
 
@@ -32,15 +32,27 @@ from src.models.fusion_classifier import predict_with_shap
 
 app = FastAPI(
     title="ViFND API - Vietnamese Fake News Detection Service",
-    description="REST API cho hệ thống phát hiện tin giả tiếng Việt qua Hợp nhất Đặc trưng Muộn và XAI",
-    version="1.0.0"
+    description="REST API cho hệ thống phát hiện tin giả tiếng Việt qua Hợp nhất Đặc trưng Ba Luồng và XAI",
+    version="1.1.0"
 )
 
 
 class ArticleRequest(BaseModel):
-    title: str = Field(..., description="Tiêu đề bài báo tiếng Việt", example="CHẤN ĐỘNG: Lộ bài thuốc thần kỳ chữa khỏi ung thư trong 3 ngày!!!")
-    content: str = Field(..., description="Thân bài hoặc đoạn trích nội dung", example="Bà con ơi chia sẻ ngay kẻo bài viết bị gỡ! Em thề thuốc tiên này cứu cả nhà đó.")
-    url: Optional[str] = Field(default="", description="Đường dẫn nguồn bài báo nếu có", example="https://sample-news.vn/post/102")
+    title: str = Field(
+        ...,
+        description="Tiêu đề bài báo tiếng Việt",
+        json_schema_extra={"example": "CHẤN ĐỘNG: Lộ bài thuốc thần kỳ chữa khỏi ung thư trong 3 ngày!!!"}
+    )
+    content: str = Field(
+        ...,
+        description="Thân bài hoặc đoạn trích nội dung",
+        json_schema_extra={"example": "Bà con ơi chia sẻ ngay kẻo bài viết bị gỡ! Em thề thuốc tiên này cứu cả nhà đó."}
+    )
+    url: Optional[str] = Field(
+        default="",
+        description="Đường dẫn nguồn bài báo nếu có",
+        json_schema_extra={"example": "https://sample-news.vn/post/102"}
+    )
 
 
 class ShapFactor(BaseModel):
@@ -52,13 +64,15 @@ class ShapFactor(BaseModel):
 
 class PredictionResponse(BaseModel):
     status: str
-    url: Optional[str]
+    url: Optional[str] = ""
     title: str
     prediction: str
     probability_fake: float
     confidence_score: float
     risk_tier: str
     stylometric_summary: Dict[str, Any]
+    cross_verification_summary: Optional[Dict[str, Any]] = None
+    evidence_articles: Optional[List[Dict[str, Any]]] = None
     top_shap_factors: List[ShapFactor]
 
 
@@ -68,15 +82,15 @@ def health_check():
     return {
         "status": "healthy",
         "service": "ViFND Detection Microservice",
-        "version": "1.0.0",
-        "engine": "Dual-Stream Feature Fusion (PhoBERT + Stylometrics + XGBoost)"
+        "version": "1.1.0",
+        "engine": "Tri-Stream Feature Fusion (PhoBERT + Stylometrics + Cross-Source Verifier + XGBoost)"
     }
 
 
 @app.post("/api/v1/predict", response_model=PredictionResponse, tags=["Inference"])
 def predict_article(request: ArticleRequest):
     """
-    Phân loại bài báo và trích xuất lý do giải thích SHAP.
+    Phân loại bài báo, kiểm chứng đối chiếu và trích xuất lý do giải thích SHAP.
     """
     if not request.title.strip() and not request.content.strip():
         raise HTTPException(
@@ -97,17 +111,19 @@ def predict_article(request: ArticleRequest):
 @app.post("/api/v1/explain", tags=["Explainability"])
 def explain_article(request: ArticleRequest):
     """
-    Trả về chỉ riêng phần giải thích mô hình XAI (SHAP).
+    Trả về chỉ riêng phần giải thích mô hình XAI (SHAP) và bằng chứng kiểm chứng.
     """
-    result = predict_article(request)
+    res = predict_article(request)
     return {
-        "title": result.title,
-        "prediction": result.prediction,
-        "risk_tier": result.risk_tier,
-        "top_shap_factors": result.top_shap_factors
+        "status": res.status,
+        "prediction": res.prediction,
+        "risk_tier": res.risk_tier,
+        "top_shap_factors": res.top_shap_factors,
+        "cross_verification_summary": res.cross_verification_summary,
+        "evidence_articles": res.evidence_articles
     }
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("src.api.server:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("src.api.server:app", host="0.0.0.0", port=8000, reload=True)

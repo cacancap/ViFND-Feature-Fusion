@@ -1,6 +1,11 @@
 """
 Automated Contract Verification Test Suite for ViFND-Feature-Fusion
-Verifies that all data artifacts, fixtures, and interfaces adhere strictly to team specifications.
+Verifies that all data artifacts, fixtures, and interfaces adhere strictly to team specifications:
+- Contract 1: Corpus Data Schema (TV1 -> TV2, TV3)
+- Contract 2: Stylometric Feature Tensor (TV2 -> TV4)
+- Contract 3: Semantic Embeddings Tensor (TV3 -> TV4)
+- Contract 4: Cross-Source Verification Tensor (Hybrid Engine -> TV4) [MỚI]
+- Contract 5: Prediction & XAI Output Schema (TV4 -> TV5)
 Run with: pytest tests/test_data_contracts.py
 """
 import os
@@ -60,22 +65,42 @@ def test_contract_p3_semantic_embeddings():
     norms = np.linalg.norm(X_sem, axis=1)
     assert np.allclose(norms, 1.0, atol=1e-3), "Contract 3 Violation: Vectors must be L2 unit normalized."
 
-def test_contract_p4_prediction_schema():
-    """Verifies Contract 4: Prediction & XAI Output Schema (TV4 -> TV5)"""
+def test_contract_p4_verification_tensor():
+    """Verifies Contract 4: Cross-Source Verification Tensor (Hybrid Engine -> TV4) [MỚI]"""
+    npy_path = os.path.join(FIXTURES_DIR, "sample_X_verification.npy")
+    names_path = os.path.join(FIXTURES_DIR, "verification_feature_names.json")
+    
+    assert os.path.exists(npy_path), f"Contract 4 Violation: {npy_path} does not exist."
+    assert os.path.exists(names_path), f"Contract 4 Violation: {names_path} does not exist."
+    
+    X_veri = np.load(npy_path)
+    assert X_veri.ndim == 2, "Contract 4 Violation: Verification tensor must be 2D."
+    assert X_veri.shape[1] == 4, f"Contract 4 Violation: Expected exactly 4 features, got {X_veri.shape[1]}."
+    assert X_veri.dtype == np.float32, f"Contract 4 Violation: Expected float32, got {X_veri.dtype}."
+    assert not np.isnan(X_veri).any(), "Contract 4 Violation: Tensor contains NaN."
+    assert (X_veri >= 0.0).all() and (X_veri <= 1.0).all(), "Contract 4 Violation: Values must be in [0, 1]."
+    
+    with open(names_path, "r", encoding="utf-8") as f:
+        names = json.load(f)
+    assert len(names) == 4, "Contract 4 Violation: Feature names list must have 4 entries."
+
+def test_contract_p5_prediction_schema():
+    """Verifies Contract 5: Prediction & XAI Output Schema (TV4 -> TV5)"""
     json_path = os.path.join(FIXTURES_DIR, "sample_prediction_output.json")
-    assert os.path.exists(json_path), f"Contract 4 Violation: {json_path} does not exist."
+    assert os.path.exists(json_path), f"Contract 5 Violation: {json_path} does not exist."
     
     with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
         
-    required_keys = ["status", "prediction", "probability_fake", "risk_tier", "top_shap_factors"]
+    required_keys = ["status", "prediction", "probability_fake", "risk_tier", "top_shap_factors", "evidence_articles"]
     for key in required_keys:
-        assert key in data, f"Contract 4 Violation: Missing key '{key}' in prediction output."
+        assert key in data, f"Contract 5 Violation: Missing key '{key}' in prediction output."
         
-    assert 0.0 <= data["probability_fake"] <= 1.0, "Contract 4 Violation: probability_fake must be in [0, 1]."
-    assert isinstance(data["top_shap_factors"], list), "Contract 4 Violation: top_shap_factors must be a list."
-    assert len(data["top_shap_factors"]) > 0, "Contract 4 Violation: top_shap_factors cannot be empty."
+    assert 0.0 <= data["probability_fake"] <= 1.0, "Contract 5 Violation: probability_fake must be in [0, 1]."
+    assert isinstance(data["top_shap_factors"], list), "Contract 5 Violation: top_shap_factors must be a list."
+    assert len(data["top_shap_factors"]) > 0, "Contract 5 Violation: top_shap_factors cannot be empty."
+    assert isinstance(data["evidence_articles"], list), "Contract 5 Violation: evidence_articles must be a list."
     
     first_factor = data["top_shap_factors"][0]
     for k in ["feature", "contribution", "description_vi"]:
-        assert k in first_factor, f"Contract 4 Violation: Missing factor key '{k}'."
+        assert k in first_factor, f"Contract 5 Violation: Missing factor key '{k}'."

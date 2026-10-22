@@ -12,18 +12,45 @@
     "upper_ratio": 0.182,
     "title_body_ratio": 0.15
   },
+  "cross_verification_summary": {
+    "max_corroboration_sim": 0.15,
+    "verified_source_count": 0.0,
+    "headline_cross_stance": 0.125,
+    "unverified_anomaly_penalty": 0.95,
+    "num_evidence_found": 3
+  },
+  "evidence_articles": [
+    {
+      "title": "Chữa bệnh như 'Thần y': Ung thư 10 tháng uống 100 chai thuốc và cam kết khỏi bệnh",
+      "source": "Báo Tuổi Trẻ",
+      "url": "https://tuoitre.vn/chua-benh-nhu-than-y-ung-thu-10-thang-uong-100-chai-thuoc.htm",
+      "similarity": 0.22
+    },
+    {
+      "title": "Nguy cơ mất tiền, bệnh nặng thêm vì các bài thuốc gia truyền trên mạng",
+      "source": "VnExpress",
+      "url": "https://vnexpress.net/nguy-co-vi-bai-thuoc-mang-xa-hoi.html",
+      "similarity": 0.18
+    }
+  ],
   "top_shap_factors": [
     {
-      "feature": "exclamation_density",
-      "contribution": 0.482,
+      "feature": "veri_unverified_anomaly_penalty",
+      "contribution": 0.421,
       "direction": "INCREASES_FAKE_RISK",
-      "description_vi": "Mật độ dấu chấm than (!) cao bất thường (3 dấu chấm than liên tiếp)."
+      "description_vi": "Điểm phạt bất thường khi đưa tin giật gân nhưng không có nguồn chính thống nào xác nhận."
     },
     {
       "feature": "clickbait_keyword_hits",
       "contribution": 0.351,
       "direction": "INCREASES_FAKE_RISK",
       "description_vi": "Chứa các từ khóa giật gân, kích động cảm xúc ('CHẤN ĐỘNG', '100%')."
+    },
+    {
+      "feature": "exclamation_density",
+      "contribution": 0.282,
+      "direction": "INCREASES_FAKE_RISK",
+      "description_vi": "Mật độ dấu chấm than (!) cao bất thường."
     },
     {
       "feature": "upper_ratio",

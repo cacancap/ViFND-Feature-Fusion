@@ -1,0 +1,61 @@
+{
+  "timestamp": "2026-10-22T09:20:45Z",
+  "dataset_size": 600,
+  "cv_folds": 5,
+  "cross_validation_ablation": {
+    "1. Baseline (TF-IDF + Logistic Regression)": {
+      "accuracy": 0.9983333333333334,
+      "macro_f1": 0.9983332175845545,
+      "precision": 0.9983606557377049,
+      "recall": 0.9983333333333334,
+      "roc_auc": 1.0,
+      "dim": 300
+    },
+    "2. Pure Stylometrics (15D + XGBoost)": {
+      "accuracy": 0.9983333333333334,
+      "macro_f1": 0.9983332175845545,
+      "precision": 0.9983606557377049,
+      "recall": 0.9983333333333334,
+      "roc_auc": 1.0,
+      "dim": 15
+    },
+    "3. Pure Semantics (PhoBERT 768D + XGBoost)": {
+      "accuracy": 0.9966666666666667,
+      "macro_f1": 0.996666435169109,
+      "precision": 0.9967213114754099,
+      "recall": 0.9966666666666667,
+      "roc_auc": 1.0,
+      "dim": 768
+    },
+    "4. Dual-Stream Fusion (PhoBERT + Stylo 783D)": {
+      "accuracy": 0.9983333333333334,
+      "macro_f1": 0.9983332175845545,
+      "precision": 0.9983606557377049,
+      "recall": 0.9983333333333334,
+      "roc_auc": 1.0,
+      "dim": 783
+    },
+    "5. Tri-Stream Fusion (PhoBERT + Stylo + Veri 787D) [PROPOSED]": {
+      "accuracy": 0.9983333333333334,
+      "macro_f1": 0.9983332175845545,
+      "precision": 0.9983606557377049,
+      "recall": 0.9983333333333334,
+      "roc_auc": 1.0,
+      "dim": 787
+    }
+  },
+  "holdout_test_metrics": {
+    "accuracy": 1.0,
+    "macro_f1": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "roc_auc": 1.0,
+    "pr_auc": 1.0,
+    "confusion_matrix": {
+      "tn": 60,
+      "fp": 0,
+      "fn": 0,
+      "tp": 60
+    }
+  }
+}

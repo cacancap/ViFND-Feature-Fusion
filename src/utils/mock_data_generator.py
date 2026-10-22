@@ -4,11 +4,13 @@ Generates synthetic data fixtures adhering to strict team data contracts:
 - Contract 1: sample_corpus.parquet (Schema: doc_id, title, content, source, url, label)
 - Contract 2: sample_X_stylometric.npy (Shape: [N, 15], StandardScaler normalized)
 - Contract 3: sample_X_semantic.npy (Shape: [N, 768], L2 normalized)
-- Contract 4: sample_prediction_output.json (Schema: prediction, probability_fake, risk_tier, top_shap_factors)
+- Contract 4: sample_X_verification.npy (Shape: [N, 4], [0, 1] bounded) [MỚI]
+- Contract 5: sample_prediction_output.json (Schema: prediction, probability_fake, risk_tier, evidence_articles, top_shap_factors)
 """
 import os
 import sys
 import json
+from pathlib import Path
 import numpy as np
 import pandas as pd
 
@@ -18,6 +20,9 @@ if sys.stdout.encoding != 'utf-8':
         sys.stderr.reconfigure(encoding='utf-8')
     except Exception:
         pass
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+DEFAULT_FIXTURES_DIR = str(PROJECT_ROOT / "data" / "fixtures")
 
 FEATURE_NAMES_STYLO = [
     "upper_ratio",
@@ -37,7 +42,14 @@ FEATURE_NAMES_STYLO = [
     "sentiment_extremity"
 ]
 
-def generate_fixtures(output_dir: str = "data/fixtures", num_samples: int = 20):
+FEATURE_NAMES_VERIFICATION = [
+    "veri_max_corroboration_sim",
+    "veri_verified_source_count",
+    "veri_headline_cross_stance",
+    "veri_unverified_anomaly_penalty"
+]
+
+def generate_fixtures(output_dir: str = DEFAULT_FIXTURES_DIR, num_samples: int = 20):
     os.makedirs(output_dir, exist_ok=True)
     np.random.seed(42)
 
@@ -107,7 +119,28 @@ def generate_fixtures(output_dir: str = "data/fixtures", num_samples: int = 20):
     np.save(sem_path, X_sem)
     print(f"[Fixture 3] Sample Semantic Embeddings created: {sem_path} (Shape: {X_sem.shape})")
 
-    # 4. Contract 4: Prediction Output JSON
+    # 4. Contract 4: Verification Features (N, 4) [MỚI]
+    X_veri = np.zeros((num_samples, 4), dtype=np.float32)
+    for i in range(num_samples):
+        if i % 2 == 0:  # Real news
+            X_veri[i, 0] = np.random.uniform(0.65, 0.95)  # high corroboration similarity
+            X_veri[i, 1] = np.random.uniform(0.60, 1.00)  # multiple mainstream sources
+            X_veri[i, 2] = np.random.uniform(0.70, 0.98)  # consistent stance
+            X_veri[i, 3] = np.random.uniform(0.00, 0.10)  # low anomaly penalty
+        else:  # Fake news
+            X_veri[i, 0] = np.random.uniform(0.05, 0.25)  # low corroboration similarity
+            X_veri[i, 1] = np.random.uniform(0.00, 0.20)  # few or 0 mainstream sources
+            X_veri[i, 2] = np.random.uniform(0.10, 0.35)  # divergent stance
+            X_veri[i, 3] = np.random.uniform(0.75, 1.00)  # high anomaly penalty
+
+    veri_path = os.path.join(output_dir, "sample_X_verification.npy")
+    veri_names_path = os.path.join(output_dir, "verification_feature_names.json")
+    np.save(veri_path, X_veri)
+    with open(veri_names_path, "w", encoding="utf-8") as f:
+        json.dump(FEATURE_NAMES_VERIFICATION, f, indent=2, ensure_ascii=False)
+    print(f"[Fixture 4] Sample Verification Features created: {veri_path} (Shape: {X_veri.shape})")
+
+    # 5. Contract 5: Prediction Output JSON
     sample_prediction = {
         "status": "success",
         "url": "https://tin-tuc-mang-xa-hoi.vn/post/10293",
@@ -122,18 +155,45 @@ def generate_fixtures(output_dir: str = "data/fixtures", num_samples: int = 20):
             "upper_ratio": 0.182,
             "title_body_ratio": 0.150
         },
+        "cross_verification_summary": {
+            "max_corroboration_sim": 0.15,
+            "verified_source_count": 0.0,
+            "headline_cross_stance": 0.125,
+            "unverified_anomaly_penalty": 0.95,
+            "num_evidence_found": 3
+        },
+        "evidence_articles": [
+            {
+                "title": "Chữa bệnh như 'Thần y': Ung thư 10 tháng uống 100 chai thuốc và cam kết khỏi bệnh",
+                "source": "Báo Tuổi Trẻ",
+                "url": "https://tuoitre.vn/chua-benh-nhu-than-y-ung-thu-10-thang-uong-100-chai-thuoc.htm",
+                "similarity": 0.22
+            },
+            {
+                "title": "Nguy cơ mất tiền, bệnh nặng thêm vì các bài thuốc gia truyền trên mạng",
+                "source": "VnExpress",
+                "url": "https://vnexpress.net/nguy-co-vi-bai-thuoc-mang-xa-hoi.html",
+                "similarity": 0.18
+            }
+        ],
         "top_shap_factors": [
             {
-                "feature": "exclamation_density",
-                "contribution": 0.482,
+                "feature": "veri_unverified_anomaly_penalty",
+                "contribution": 0.421,
                 "direction": "INCREASES_FAKE_RISK",
-                "description_vi": "Mật độ dấu chấm than (!) cao bất thường (3 dấu chấm than liên tiếp)."
+                "description_vi": "Điểm phạt bất thường khi đưa tin giật gân nhưng không có nguồn chính thống nào xác nhận."
             },
             {
                 "feature": "clickbait_keyword_hits",
                 "contribution": 0.351,
                 "direction": "INCREASES_FAKE_RISK",
                 "description_vi": "Chứa các từ khóa giật gân, kích động cảm xúc ('CHẤN ĐỘNG', '100%')."
+            },
+            {
+                "feature": "exclamation_density",
+                "contribution": 0.282,
+                "direction": "INCREASES_FAKE_RISK",
+                "description_vi": "Mật độ dấu chấm than (!) cao bất thường."
             },
             {
                 "feature": "upper_ratio",
@@ -152,7 +212,7 @@ def generate_fixtures(output_dir: str = "data/fixtures", num_samples: int = 20):
     pred_path = os.path.join(output_dir, "sample_prediction_output.json")
     with open(pred_path, "w", encoding="utf-8") as f:
         json.dump(sample_prediction, f, indent=2, ensure_ascii=False)
-    print(f"[Fixture 4] Sample Prediction Output created: {pred_path}")
+    print(f"[Fixture 5] Sample Prediction Output created: {pred_path}")
     print("\n[SUCCESS] All team fixtures generated successfully!")
 
 if __name__ == "__main__":
